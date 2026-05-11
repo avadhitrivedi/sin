@@ -1,96 +1,76 @@
-module tb;
-  reg clk;
-  reg resetn;
-  reg [31:0] dataIn;
-  reg validIn;
-  reg lastIn;
-  wire [31:0] dataOut;
-  wire validOut;
-  wire lastOut;
-
-  integer i;
-
-  code dut (
-    .clk(clk),
-    .resetn(resetn),
-    .dataIn(dataIn),
-    .validIn(validIn),
-    .lastIn(lastIn),
-    .dataOut(dataOut),
-    .validOut(validOut),
-    .lastOut(lastOut)
-  );
-
-  always #5 clk = ~clk;
-
-  always @(posedge clk) begin
-    #1;
-    if(validIn || validOut) begin
-       $display("time= %t, dataIn= %h, lastIn= %d, validOut= %h, dataOut= %h, lastOut=%b",$time,dataIn,lastIn,validOut,dataOut,lastOut);
-
-    end
-  end
-
+module sine#(parameter INPUT_BITS=16,
+             parameter OUTPUT_BITS=18,
+             parameter LUT_DEPTH_BITS=10)(
+  input clk,
+  input resetn,
+  input[INPUT_BITS-1:0] theta,
+  input validIn,
+  output[OUTPUT_BITS-1:0] sineTheta,
+  output validOut);
+  
+  //we used preinitialised mem where we stored the sin corresponding to the MSB bits [15:6] of the theta
+  reg signed[17:0] sin_lut[0:1023]; //10 bits of add means depth=1024
+  reg signed[17:0] cos_lut[0:1023];
+  reg [9:0]addr_s1;
+  reg [5:0]frac_s1;
+  reg signed[17:0] sin_base_s2;
+  reg signed[17:0] cos_base_s2;
+  reg [5:0]  frac_s2;
+  reg signed[17:0] sin_base_s3;
+  reg signed[23:0] product_s3; //it is product of 18 bit and 6 bit values
+  reg signed[17:0] sin_base_s4;
+  reg signed[17:0] div_s4;//output shifted by 13 position becomes a 18 bit value
+  reg signed[18:0] sum_s5; //took an extra bit in register than needed to handle overflow
+  reg validIn_s1,validIn_s2,validIn_s3,validIn_s4,validIn_s5;
+  
+  //interval one module (using pipelining)
   initial begin
-    $dumpfile("code.vcd");
-    $dumpvars(0, tb);
-    clk = 0;
-    resetn = 0;
-    dataIn = 0;
-    validIn = 0;
-    lastIn = 0;
-    #12;
-    resetn = 1;
-
-    //seq 1
-    @(negedge clk);
-    validIn = 1;
-    //should have sent a dataIn here also
-    
-    for(i = 0; i < 11; i = i + 1) begin
-      @(negedge clk);
-      dataIn = $urandom_range(0, 32'hFFFF_FFFF);
-      
-      if(i==10)
-      lastIn=1;
-    end
-
-    @(negedge clk);
-    validIn = 0;
-    lastIn = 0;
-
-    repeat(20) @(posedge clk);//wait for output to be read
-    
-    //seq 2
-    @(negedge clk);
-    validIn = 1;
-    //should have sent a dataIn here also
-    
-    for(i = 0; i < 6; i = i + 1) begin
-      @(negedge clk);
-      dataIn = $urandom_range(0, 100);
-      lastIn = (i == 5);
-    end
-
-    @(negedge clk);
-    validIn = 0;
-    lastIn = 0;
-
-    repeat(20) @(posedge clk);//waiting for outputs to be read
-    
-    //if only one word is sent as payload
-    @(negedge clk);
-    validIn = 1;
-    dataIn = 32'hDEADBEEF;
-    lastIn = 1;
-
-    @(negedge clk);
-    validIn = 0;
-    lastIn = 0;
-
-    repeat(15) @(posedge clk);//to read the output
-    #100;
-    $finish;
+  $readmemh("sin.mem", sin_lut); //loads the .mem file to the sin_lut register at the start of simualtion
+  $readmemh("cos.mem", cos_lut);
   end
-
+  
+  always @(posedge clk)begin
+    if(!resetn)begin
+      addr_s1<=0;
+      frac_s1<=0;
+      cos_base_s2<=0;
+      sin_base_s2<=0;
+      frac_s2<=0;
+      sin_base_s3<=0;
+      product_s3<=0;
+      sin_base_s4<=0;
+      div_s4<=0;
+      sum_s5<=0;
+      validIn_s1<=0;
+      validIn_s2<=0;
+      validIn_s3<=0;
+      validIn_s4<=0;
+      validIn_s5<=0;
+    end
+    else begin
+      
+      addr_s1<=theta[15:6];
+      frac_s1<=theta[5:0];
+      validIn_s1<=validIn;
+      
+      sin_base_s2<=sin_lut[addr_s1];
+      cos_base_s2<=cos_lut[addr_s1];
+      frac_s2<=frac_s1;
+      validIn_s2<=validIn_s1;
+      
+      sin_base_s3<=sin_base_s2;
+      product_s3 <= cos_base_s2 * $signed({1'b0, frac_s2}); //If any operand is unsigned, the operation may become unsigned  
+      validIn_s3<=validIn_s2;
+      
+      sin_base_s4<=sin_base_s3;
+      div_s4<=product_s3>>>13; 
+      validIn_s4<=validIn_s3;
+      
+      sum_s5<= sin_base_s4 + div_s4;
+      validIn_s5<=validIn_s4;
+    end
+  end
+  
+  assign validOut= validIn_s5;
+  assign sineTheta = sum_s5[17:0];
 endmodule
