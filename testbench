@@ -1,0 +1,73 @@
+module tb;
+  parameter INPUT_BITS=16;
+  parameter OUTPUT_BITS=18;
+  parameter LUT_DEPTH_BITS=10;
+  
+  reg clk;
+  reg resetn;
+  reg[INPUT_BITS-1:0] theta;
+  reg validIn;
+  wire[OUTPUT_BITS-1:0] sineTheta;
+  wire validOut;
+  
+  integer i;
+  real angle;
+  real expected_real;
+  integer expected_integer;
+  reg[31:0] expected_integer_reg1,expected_integer_reg2,expected_integer_reg3,expected_integer_reg4;
+  
+  sine dut(.clk(clk),
+           .resetn(resetn),
+           .theta(theta),
+           .validIn(validIn),
+           .sineTheta(sineTheta),
+           .validOut(validOut));
+  
+  always #5 clk=~clk;
+  
+  always @(posedge clk)begin
+    if(!resetn)begin
+      expected_integer_reg1<=0;
+      expected_integer_reg2<=0;
+      expected_integer_reg3<=0;
+      expected_integer_reg4<=0;
+    end
+    else begin
+    expected_integer_reg1<=expected_integer;
+    expected_integer_reg2<=expected_integer_reg1;
+    expected_integer_reg3<=expected_integer_reg2;
+    expected_integer_reg4<=expected_integer_reg3;
+    end
+  end
+  
+  always @(posedge clk)begin
+    #1;
+    angle=(theta*2.0*3.141)/65536.0; // theta*2*pi/(2^16);
+    expected_real = $sin(angle);
+    expected_integer = $rtoi(expected_real * 131072.0); //converted real to integer after scaling it (the same we did in the design code)
+   $display("time= %t, theta= %h, validIn= %b, sineTheta= %d, validOut= %b, expected_sineTheta= %d",$time,theta,validIn,sineTheta,validOut,expected_integer_reg4);
+  end
+  
+  initial begin
+    clk=0;
+    resetn=0;
+    theta=0;
+    validIn=0;
+    #12;
+    resetn=1;
+    
+    for(i=0;i<15;i++)begin
+      @(negedge clk);
+      if(i==3 || i==6 || i==14)
+        validIn=0;
+      else
+        validIn=1;
+      
+      theta=1000*i;
+    end
+    
+    #100;
+    $finish;
+  end
+  
+endmodule
