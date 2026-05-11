@@ -1,0 +1,96 @@
+module tb;
+  reg clk;
+  reg resetn;
+  reg [31:0] dataIn;
+  reg validIn;
+  reg lastIn;
+  wire [31:0] dataOut;
+  wire validOut;
+  wire lastOut;
+
+  integer i;
+
+  code dut (
+    .clk(clk),
+    .resetn(resetn),
+    .dataIn(dataIn),
+    .validIn(validIn),
+    .lastIn(lastIn),
+    .dataOut(dataOut),
+    .validOut(validOut),
+    .lastOut(lastOut)
+  );
+
+  always #5 clk = ~clk;
+
+  always @(posedge clk) begin
+    #1;
+    if(validIn || validOut) begin
+       $display("time= %t, dataIn= %h, lastIn= %d, validOut= %h, dataOut= %h, lastOut=%b",$time,dataIn,lastIn,validOut,dataOut,lastOut);
+
+    end
+  end
+
+  initial begin
+    $dumpfile("code.vcd");
+    $dumpvars(0, tb);
+    clk = 0;
+    resetn = 0;
+    dataIn = 0;
+    validIn = 0;
+    lastIn = 0;
+    #12;
+    resetn = 1;
+
+    //seq 1
+    @(negedge clk);
+    validIn = 1;
+    //should have sent a dataIn here also
+    
+    for(i = 0; i < 11; i = i + 1) begin
+      @(negedge clk);
+      dataIn = $urandom_range(0, 32'hFFFF_FFFF);
+      
+      if(i==10)
+      lastIn=1;
+    end
+
+    @(negedge clk);
+    validIn = 0;
+    lastIn = 0;
+
+    repeat(20) @(posedge clk);//wait for output to be read
+    
+    //seq 2
+    @(negedge clk);
+    validIn = 1;
+    //should have sent a dataIn here also
+    
+    for(i = 0; i < 6; i = i + 1) begin
+      @(negedge clk);
+      dataIn = $urandom_range(0, 100);
+      lastIn = (i == 5);
+    end
+
+    @(negedge clk);
+    validIn = 0;
+    lastIn = 0;
+
+    repeat(20) @(posedge clk);//waiting for outputs to be read
+    
+    //if only one word is sent as payload
+    @(negedge clk);
+    validIn = 1;
+    dataIn = 32'hDEADBEEF;
+    lastIn = 1;
+
+    @(negedge clk);
+    validIn = 0;
+    lastIn = 0;
+
+    repeat(15) @(posedge clk);//to read the output
+    #100;
+    $finish;
+  end
+
+endmodule
